@@ -1,44 +1,107 @@
-# Hussein Abdallah . Jarvis Consulting
+# Linux Cluster Monitoring Agent
 
-Hello, my name is Hussein Abdallah! I am a graduate from the University of Western Ontario with a BSc, with an Honour's Specialization in Computer Science. I've always been interested in software, attending hackathons since high school! However, working as a Data Analyst at RBC, I realized there is so much that can be automated for efficiency. While I was there, I automated what I could with respect to the data pulls, and I loved doing this, which brought me to DevOps! Prior to this, I had worked on software development projects in a variety of languages; you can see some of my projects below!
+# Introduction
+This project contains a series of bash scripts which will be used by users wishing to track cpu, disk, and memory usage for performance purposes. These stats are pulled using various commands such as lscpu, vmstat, and df. The stats are isolated using regular expressions, and then will be stored in a postgress SQL database within a docker container. Using crontab, these statistics can be pulled and stored by the minute. Using git, changes are committed and pushed to the repository, keeping track of any updates. The project was created and tested on a Rocky Linux virtual machine hosted on the Google Cloud Platform (GCP).
 
-## Skills
+# Quick start
+- First, a psql instance is started using ./scripts/psql_docker.sh
+```bash
+# create a psql database with the given username and password in a docker container
+psql_docker.sh create host_agent password
 
-**Proficient:** Java, Linux/Bash, RDBMS/SQL, Agile/Scrum, Git, Python, Docker, Pandas, Cloud (AWS), Tableau
+# start the docker container
+psql_docker.sh start
+```
+- Then, tables will be created using ./sql/ddl.sql
+```bash
+EXPORT PGPASSWORD='password'
+psql -h localhost -U postgres -d host_agent -f sql/ddl.sql
+```
+- Hardware specs can then be inserted into the database using ./scripts/host_info.sh
+```bash
+host_info.sh localhost 5432 host_agent postgres password
+```
+- After hardware specs are inserted, hardware usage data can be inserted into the database using ./scripts/host_usage.sh
+```bash
+host_usage.sh localhost 5432 host_agent postgres password
+```
+- To have this automated, crontab can be used. To track usage stats every minute, you can use:
+```bash
+* * * * * bash host_usage.sh localhost 5432 host_agent postgres password > /tmp/host_usage.log
 
-**Competent:** C++, Spark, Machine Learning/AI, JavaScript, Docker, Flutter/Dart
+```
 
-**Familiar:** R, SAS, Hadoop/Hive, NodeJS, ReactJS, Apache Airflow
+# Implementation
+## Architecture
+![image](./assets/cluster_diagram.png)
 
-## Jarvis Projects
+## Scripts
+- psql_docker.sh: A script which creates a psql instance within a docker container
+```bash
+# create a psql database with the given username and password in a docker container
+psql_docker.sh create db_username db_password
 
-Project source code: [https://github.com/jarviscanada/jarvis_data_eng_HusseinAbdallah](https://github.com/jarviscanada/jarvis_data_eng_HusseinAbdallah)
+# start the docker container
+psql_docker.sh start
+
+# stop the docker container
+psql_docker.sh stop
+```
+- host_info.sh: A script which collects the hardware specs/information and saves them into the host_info table within the psql database
+```bash
+# save this computer's specs to the host_info table in the given database
+host_info.sh psql_host psql_port db_name psql_user psql_password
+```
+- host_usage.sh: A script which collects the hardware usage and saves it to the host_usage table within the psql database
+```bash
+# save this computer's usage data to the host_usage table in the given database
+host_usage.sh psql_host psql_port db_name psql_user psql_password
+```
+- crontab: An automation tool. You can automate the host_usage.sh to periodically collect usage data. Take the following:
+```
+* * * * * bash host_usage.sh localhost 5432 host_agent postgres password > path_to_log
+```
+
+## Database Modeling
+- 'host_info'
+| Column           | Data Type   | Constraints                            | Description                  |
+|------------------|-------------|----------------------------------------|------------------------------|
+| id               | SERIAL      | PRIMARY KEY, NOT NULL                  | Automatically incremented ID |
+| hostname         | VARCHAR     | UNIQUE, NOT NULL                       | Unique identifier for each host |
+| cpu_number       | INT2        | NOT NULL                               | Number of CPUs               |
+| cpu_architecture | VARCHAR     | NOT NULL                               | CPU architecture type        |
+| cpu_model        | VARCHAR     | NOT NULL                               | Model name of the CPU        |
+| cpu_mhz          | FLOAT8      | NOT NULL                               | CPU speed in MHz             |
+| l2_cache         | INT4        | NOT NULL                               | Size of L2 cache in KB       |
+| timestamp        | TIMESTAMP   | NULL                                   | Timestamp of the record      |
+| total_mem        | INT4        | NULL                                   | Total memory in MB           |
+### Constraints
+  - **Primary Key**: `host_info_pk`
+    - Enforces unique identifier for each record based on `id`
+  - **Unique Constraint**: `host_info_un`
+    - Ensures that `hostname` is unique across the table
+- host_usage.sh
+| Column           | Data Type   | Constraints                            | Description                       |
+|------------------|-------------|----------------------------------------|-----------------------------------|
+| timestamp        | TIMESTAMP   | NOT NULL                               | Timestamp of the record           |
+| host_id          | SERIAL      | NOT NULL, FOREIGN KEY (host_id) REFERENCES host_info(id) | Reference to `host_info` table   |
+| memory_free      | INT4        | NOT NULL                               | Amount of free memory in MB       |
+| cpu_idle         | INT2        | NOT NULL                               | CPU idle time percentage          |
+| cpu_kernel       | INT2        | NOT NULL                               | CPU time spent in kernel mode     |
+| disk_io          | INT4        | NOT NULL                               | Disk I/O operations               |
+| disk_available   | INT4        | NOT NULL                               | Available disk space in MB        |
+  - **Foreign Key**: `host_usage_host_info_fk`
+    - Ensures `host_id` references a valid `id` in the `host_info` table
 
 
-**Cluster Monitor** [[GitHub](https://github.com/jarviscanada/jarvis_data_eng_HusseinAbdallah/tree/masterhttps://github.com/jarviscanada/jarvis_data_eng_HusseinAbdallah/tree/main/linux_sql)]: Programmed Bash scripts to track cpu, disk, and memory usage for performance purposes. Stats are pulled using various commands such as lscpu, vmstat, and df. The stats are isolated using regular expressions, and then stored in a postgress SQL database within a docker container. Using crontab, these statistics can be pulled and stored by the minute. The project was created and tested on a Rocky Linux virtual machine hosted on the Google Cloud Platform (GCP).
 
+# Test
+Bash scripts were tested by checking the psql tables after using the scripts. Changes were only pushed to git when errors to do with inserting were resolved, and all numbers inserted were verified.
 
-## Highlighted Projects
-**Western Interactive Map Application** [[GitHub](https://github.com/7seinfa/Star-Quest)]: Designed a Java application with a graphical interface made with Swing in which a user is able to view maps of buildings and see points of interest (POIs) of several buildings at Western University. An admin can add or remove POIs which are visible to all, or a user can add or remove their own POIs. These POIs as well as other building information are stored in JSON files, accessed using json-simple. The project was created by a team of four using a Waterfall methodology.
+# Deployment
+The psql instance was containerized within docker, and was automated on my Rocky linux instance using crontab. All scripts are published and available on GitHub.
 
-**Star Quest** [[GitHub](https://github.com/7seinfa/Star-Quest)]: Collaborated with a group of students in an Agile Scrum environment to clone Flappy Bird in C++ and Qt, but changing the theme. The idea was that it would be efficient enough to be playable on the Raspberry Pi, which it was tested on. To make it efficient, I used memory saving techniques, such as reusing obstacles that exit the screen for the infinitely generated map rather than continually creating new ones.
-
-**Just Another Platformer** [[GitHub](https://devpost.com/software/just-another-platformer)]: Developed a platformer game for a hackathon in Godot Game Engine, an engine I had never touched before. Within 48 hours, I had tought myself my way around the engine, and learned its own language, GDScript. I was able to create a working platformer with animations, enemies, different attacks and skills, sound effects and music, and a variety of levels.
-
-
-## Professional Experiences
-
-**DevOps Engineer, Jarvis (2024-present)**: Consulted as a DevOps Engineer, where I used and learned a variety of skills, including Linux, Postgres, Docker, and Bash scripting. Worked on a team in a Scrum environment, attending daily Scrums with the team and having several meetings to showcase my work. I practices version control, using a development branch on our repository, and only merging to the master branch through pull requests.
-
-**Data Analyst, RBC (2023-2024)**: Migrated our automated pipeline from SAS, and automated other tasks which were using time, to Python, PySpark, Apache Airflow, Sonatype Nexus, and a Yarn cluster. Brought about change in the Mutual Funds industry by analyzing data pulled through Teradata SQL, and displayed the data using Tableau dashboards. Presented my findings to several regional managers, VPs, and RECs.
-
-
-## Education
-**University of Western Ontario (2020-2024)**, Bachelor of Science, Computer Science
-- Scholarship of Distinction
-- GPA: 3.7/4.0
-
-
-## Miscellaneous
--   
--   
+#Improvements
+- Collect CPU usage frequency information
+- Collect data on each CPU core rather than altogether, as well as different disks in the case of multiple disks
+- Handle errors in the case that the tables don't exist in host_info.sh and host_usage.sh
